@@ -1,114 +1,272 @@
 import os
-from tkinter import Tk, Entry, Label, Button, Canvas, Message
-from tkinter.filedialog import askopenfilename, asksaveasfilename
-from PIL import Image
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-import hashlib
-import tkinter.messagebox as tkMessageBox
 import tkinter as tk
+import struct
+import io
+import hashlib
+from tkinter import ttk, filedialog, messagebox
+from PIL import Image
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+from cryptography.exceptions import InvalidTag
+import platform
 
-# ---------------------
-# GUI stuff starts here
-# ---------------------
+# Constants
+HEADER_FORMAT = '!16sI12sIIBB'  # salt, iterations, nonce, width, height, mode_len, format_len
+PBKDF_ITERATIONS = 2**20  # 1,048,576 iterations (adjust based on system capabilities)
+MODE_NAMES = ['1', 'L', 'P', 'RGB', 'RGBA', 'CMYK', 'YCbCr', 'LAB', 'HSV', 'I', 'F']
 
-def pass_alert():
-    tkMessageBox.showinfo("Password Alert", "Please enter a password.")
+class SecureImageCrypto:
+    def __init__(self):
+        self.current_operation = None
 
-def enc_success(imagename):
-    tkMessageBox.showinfo("Success", f"Encrypted Image: {imagename}")
+    def derive_key(self, password, salt, iterations):
+        kdf = Scrypt(
+            salt=salt,
+            length=32,
+            n=iterations,
+            r=8,
+            p=1
+        )
+        return kdf.derive(password.encode('utf-8'))
 
-def image_open():
-    global file_path_e
+    def encrypt_image(self, input_path, password):
+        try:
+            with Image.open(input_path) as img:
+                img_format = img.format or 'PNG'
+                mode = img.mode
+                
+                if mode not in MODE_NAMES:
+                    raise ValueError(f"Unsupported image mode: {mode}")
 
-    enc_pass = passg.get()
-    if enc_pass == "":
-        pass_alert()
-    else:
-        password = hashlib.sha256(enc_pass.encode()).digest()
-        filename = askopenfilename()
-        file_path_e = os.path.dirname(filename)
-        encrypt_image(filename, password)
+                # Generate cryptographic parameters
+                salt = os.urandom(16)
+                nonce = os.urandom(12)
+                iterations = PBKDF_ITERATIONS
 
-def cipher_open():
-    global file_path_d
+                # Derive encryption key
+                key = self.derive_key(password, salt, iterations)
+                aesgcm = AESGCM(key)
 
-    dec_pass = passg.get()
-    if dec_pass == "":
-        pass_alert()
-    else:
-        password = hashlib.sha256(dec_pass.encode()).digest()
-        filename = askopenfilename()
-        file_path_d = os.path.dirname(filename)
-        decrypt_image(filename, password)
+                # Convert image to bytes with metadata
+                img_byte_arr = io.BytesIO()
+                img.save(img_byte_arr, format=img_format)
+                plaintext = img_byte_arr.getvalue()
 
-def encrypt_image(filename, password):
-    # Open the image file
-    img = Image.open(filename)
-    img_data = img.tobytes()
+                # Encrypt image data
+                ciphertext = aesgcm.encrypt(nonce, plaintext, None)
 
-    # Get the image dimensions
-    width, height = img.size
+                # Prepare header with metadata lengths
+                header = struct.pack(
+                    HEADER_FORMAT,
+                    salt,
+                    iterations,
+                    nonce,
+                    img.width,
+                    img.height,
+                    len(mode),
+                    len(img_format)
+                )
 
-    # AES encryption setup
-    cipher = AES.new(password, AES.MODE_CBC)
-    encrypted_data = cipher.encrypt(pad(img_data, AES.block_size))
+                # Add encoded metadata
+                metadata = mode.encode('utf-8') + img_format.encode('utf-8')
 
-    # Save the encrypted image (including the IV for decryption, and the dimensions)
-    output_filename = asksaveasfilename(defaultextension=".enc")
-    with open(output_filename, 'wb') as f:
-        # Save the image dimensions (width and height)
-        f.write(width.to_bytes(4, 'big'))
-        f.write(height.to_bytes(4, 'big'))
-        f.write(cipher.iv)  # Save the IV to the file
-        f.write(encrypted_data)
-    
-    enc_success(os.path.basename(output_filename))
+                return header + metadata + ciphertext
 
-def decrypt_image(filename, password):
-    # Open the encrypted file
-    with open(filename, 'rb') as f:
-        # Read the image dimensions (width and height)
-        width = int.from_bytes(f.read(4), 'big')
-        height = int.from_bytes(f.read(4), 'big')
+        except Exception as e:
+            raise CryptoOperationError(f"Encryption failed: {str(e)}")
 
-        # Read the IV and encrypted data
-        iv = f.read(16)  # AES block size is 16 bytes
-        encrypted_data = f.read()
+    def decrypt_image(self, encrypted_data, password):
+        try:
+            # Parse header
+            header_size = struct.calcsize(HEADER_FORMAT)
+            header = encrypted_data[:header_size]
+            salt, iterations, nonce, width, height, mode_len, format_len = struct.unpack(HEADER_FORMAT, header)
+            
+            # Validate header values
+            if iterations > PBKDF_ITERATIONS * 2:
+                raise ValueError("Invalid iteration count")
+            
+            if mode_len > 10 or mode_len < 1 or format_len > 10 or format_len < 1:
+                raise ValueError("Corrupted metadata information")
 
-    # AES decryption setup
-    cipher = AES.new(password, AES.MODE_CBC, iv)
-    decrypted_data = unpad(cipher.decrypt(encrypted_data), AES.block_size)
+            # Extract metadata
+            metadata_start = header_size
+            metadata_end = metadata_start + mode_len + format_len
+            metadata = encrypted_data[metadata_start:metadata_end]
 
-    # Convert the decrypted data back to an image
-    img = Image.frombytes('RGB', (width, height), decrypted_data)
+            mode = metadata[:mode_len].decode('utf-8')
+            img_format = metadata[mode_len:mode_len+format_len].decode('utf-8')
 
-    # Save the decrypted image
-    output_filename = asksaveasfilename(defaultextension=".png")
-    img.save(output_filename)
+            # Derive decryption key
+            key = self.derive_key(password, salt, iterations)
+            aesgcm = AESGCM(key)
 
-# Tkinter GUI setup
-root = Tk()
-title = "Image Encryption"
-author = "Made by Aditya"
+            # Decrypt image data
+            ciphertext = encrypted_data[metadata_end:]
+            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
 
-msgtitle = Message(root, text=title)
-msgtitle.config(font=('helvetica', 17, 'bold'), width=200)
+            # Reconstruct image
+            img = Image.open(io.BytesIO(plaintext))
+            if img.size != (width, height) or img.mode != mode:
+                raise ValueError("Image metadata mismatch")
 
-msgauthor = Message(root, text=author)
-msgauthor.config(font=('helvetica', 10), width=200)
+            return img
 
-canvas_width = 200
-canvas_height = 50
+        except InvalidTag:
+            raise CryptoOperationError("Decryption failed - incorrect password or corrupted data")
+        except Exception as e:
+            raise CryptoOperationError(f"Decryption failed: {str(e)}")
 
-w = Canvas(root, width=canvas_width, height=canvas_height)
-w.pack()
+class CryptoOperationError(Exception):
+    pass
 
-Label(root, text="Password: ").pack(side=tk.LEFT)  # Correct usage of tk.LEFT
-passg = Entry(root, show="*")
-passg.pack(side=tk.LEFT)
+class ImageEncryptorGUI(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Advanced Image Cryptography Suite")
+        self.geometry("800x600")
+        self.configure(bg='#f0f0f0')
+        self.style = ttk.Style()
+        self.crypto = SecureImageCrypto()
+        self.create_widgets()
+        self.set_os_theme()
 
-Button(root, text="Encrypt", command=image_open).pack(side=tk.TOP)
-Button(root, text="Decrypt", command=cipher_open).pack(side=tk.BOTTOM)
+    def set_os_theme(self):
+        system = platform.system()
+        if system == 'Windows':
+            self.tk.call('source', 'azure.tcl')
+            self.tk.call('set_theme', 'dark')
+        elif system == 'Darwin':
+            self.style.theme_use('aqua')
 
-root.mainloop()
+    def create_widgets(self):
+        # Main container
+        main_frame = ttk.Frame(self)
+        main_frame.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
+
+        # Header
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill=tk.X)
+        
+        ttk.Label(header_frame, text="🔒 Secure Image Vault", 
+                font=('Helvetica', 24, 'bold')).pack(pady=10)
+        
+        ttk.Label(header_frame, text="Military-grade AES-256-GCM Encryption",
+                font=('Helvetica', 12)).pack()
+
+        # Password entry
+        password_frame = ttk.Frame(main_frame)
+        password_frame.pack(pady=20, fill=tk.X)
+        
+        ttk.Label(password_frame, text="Vault Key:", width=10).pack(side=tk.LEFT)
+        self.password_entry = ttk.Entry(password_frame, show="•", width=30)
+        self.password_entry.pack(side=tk.LEFT, padx=5)
+        
+        self.show_password = tk.BooleanVar()
+        ttk.Checkbutton(password_frame, text="Show", variable=self.show_password,
+                      command=self.toggle_password).pack(side=tk.LEFT)
+
+        # Operation buttons
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=20)
+        
+        self.encrypt_btn = ttk.Button(
+            btn_frame, text="Encrypt Image", command=self.start_encryption,
+            style='Accent.TButton'
+        )
+        self.encrypt_btn.pack(side=tk.LEFT, padx=10)
+        
+        self.decrypt_btn = ttk.Button(
+            btn_frame, text="Decrypt Image", command=self.start_decryption
+        )
+        self.decrypt_btn.pack(side=tk.LEFT, padx=10)
+
+        # Status bar
+        self.status_bar = ttk.Label(self, text="Ready", relief=tk.SUNKEN)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Security indicators
+        self.password_strength = ttk.Progressbar(main_frame, length=200)
+        self.password_strength.pack(pady=10)
+        self.password_entry.bind('<KeyRelease>', self.update_password_strength)
+
+    def toggle_password(self):
+        show = self.show_password.get()
+        self.password_entry.config(show='' if show else '•')
+
+    def update_password_strength(self, event):
+        password = self.password_entry.get()
+        strength = min(len(password) * 2, 100)
+        self.password_strength['value'] = strength
+
+    def start_encryption(self):
+        self._perform_operation('encrypt')
+
+    def start_decryption(self):
+        self._perform_operation('decrypt')
+
+    def _perform_operation(self, operation):
+        password = self.password_entry.get()
+        if not password:
+            messagebox.showwarning("Security Alert", "Vault key cannot be empty")
+            return
+        
+        file_path = filedialog.askopenfilename(
+            title=f"Select {'Image' if operation == 'encrypt' else 'Encrypted File'}",
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg")] if operation == 'encrypt' 
+                     else [("Encrypted Files", "*.enc")]
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            self._disable_ui()
+            if operation == 'encrypt':
+                encrypted_data = self.crypto.encrypt_image(file_path, password)
+                save_path = filedialog.asksaveasfilename(
+                    defaultextension=".enc",
+                    filetypes=[("Encrypted File", "*.enc")]
+                )
+                if save_path:
+                    with open(save_path, 'wb') as f:
+                        f.write(encrypted_data)
+                    messagebox.showinfo("Success", 
+                        f"Image secured at:\n{save_path}\n\nSHA-256: {self._calculate_hash(encrypted_data)}")
+            else:
+                with open(file_path, 'rb') as f:
+                    encrypted_data = f.read()
+                decrypted_img = self.crypto.decrypt_image(encrypted_data, password)
+                save_path = filedialog.asksaveasfilename(
+                    defaultextension=".png",
+                    filetypes=[("PNG Image", "*.png"), ("JPEG Image", "*.jpg")]
+                )
+                if save_path:
+                    decrypted_img.save(save_path)
+                    messagebox.showinfo("Success", "Image restored successfully!")
+            
+        except CryptoOperationError as e:
+            messagebox.showerror("Security Error", str(e))
+        except Exception as e:
+            messagebox.showerror("System Error", f"Unexpected error: {str(e)}")
+        finally:
+            self._enable_ui()
+
+    def _calculate_hash(self, data):
+        return hashlib.sha256(data).hexdigest()
+
+    def _disable_ui(self):
+        self.encrypt_btn.config(state=tk.DISABLED)
+        self.decrypt_btn.config(state=tk.DISABLED)
+        self.status_bar.config(text="Processing...")
+        self.update()
+
+    def _enable_ui(self):
+        self.encrypt_btn.config(state=tk.NORMAL)
+        self.decrypt_btn.config(state=tk.NORMAL)
+        self.status_bar.config(text="Ready")
+        self.update()
+
+if __name__ == "__main__":
+    app = ImageEncryptorGUI()
+    app.mainloop()
