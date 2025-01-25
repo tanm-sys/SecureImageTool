@@ -1,134 +1,132 @@
+SecureImageTool 🔒
+
+**SecureImageTool** is an advanced, cross-platform application for encrypting and decrypting images using state-of-the-art cryptographic techniques. Built with Python and Tkinter, it provides a user-friendly interface for securing sensitive image files with military-grade encryption.
 
 ---
 
-# Secure Image Tool
+## Features ✨
 
-This Python application encrypts and decrypts images using AES (Advanced Encryption Standard) in CBC mode, providing a secure way to protect your image data. The tool ensures that sensitive information remains confidential by leveraging robust encryption techniques.
+### **Advanced Security**
+- **AES-256-GCM Encryption**: Authenticated encryption ensures both confidentiality and integrity.
+- **Scrypt Key Derivation**: Memory-hard key derivation function to resist brute-force attacks.
+- **Secure Metadata Handling**: Preserves image metadata (format, mode) while encrypting.
+- **Password Strength Meter**: Real-time feedback on password strength.
 
-## Table of Contents
+### **User-Friendly Interface**
+- **Cross-Platform Support**: Works on Windows, macOS, and Linux.
+- **Modern UI**: Clean and intuitive design with dark/light theme support.
+- **Progress Indicators**: Visual feedback during encryption/decryption operations.
+- **File Integrity Verification**: SHA-256 hash verification for encrypted files.
 
-1. [Getting Started](#getting-started)
-2. [System Requirements](#system-requirements)
-3. [Installation](#installation)
-4. [Usage](#usage)
-5. [Advanced Features](#advanced-features)
-6. [Contributing](#contributing)
-7. [License](#license)
+### **Robust Error Handling**
+- **Input Validation**: Ensures valid passwords and file selections.
+- **Comprehensive Error Messages**: Clear feedback for cryptographic failures or corrupted files.
+- **Metadata Validation**: Verifies image metadata during decryption to prevent tampering.
 
-## Getting Started
+---
 
-### System Requirements
+## Installation 🛠️
 
-Before you begin, ensure that your environment meets the following requirements:
+### Prerequisites
+- Python 3.8 or higher
+- `Pillow` (PIL) for image processing
+- `cryptography` for cryptographic operations
 
-- **Python 3.x**: The application is written in Python and requires version 3.x.
-- **tkinter** for GUI elements: This comes pre-installed with most Python installations. If not available, it can be installed using `pip`.
-- **Pillow**: A fork of PIL (Python Imaging Library) that adds image file handling capabilities. You can install it via pip:
+### Steps
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/tanm-sys/SecureImageTool.git
+   cd SecureImageTool
+   ```
 
-    ```sh
-    pip install Pillow
-    ```
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Installation
+3. Run the application:
+   ```bash
+   python image_encrypt_decrypt.py
+   ```
 
-1. Clone this repository or download the files.
-2. Navigate to the directory containing the Python script:
-    
-    ```sh
-    cd path/to/SecureImageTool/
-    ```
-3. Run the application using Python 3.x interpreter:
+---
 
-    ```sh
-    python SecureImageTool.py
-    ```
+## Usage 🖼️
 
-### Installation via Virtual Environment
+### **Encrypting an Image**
+1. Launch the application.
+2. Enter a strong password in the "Vault Key" field.
+3. Click **Encrypt Image**.
+4. Select the image file you want to encrypt.
+5. Choose a location to save the encrypted file (`.enc` format).
 
-1. Create a virtual environment if you haven't already done so:
-    
-    ```sh
-    python3 -m venv env_name
-    ```
+### **Decrypting an Image**
+1. Launch the application.
+2. Enter the same password used for encryption.
+3. Click **Decrypt Image**.
+4. Select the encrypted file (`.enc` format).
+5. Choose a location to save the decrypted image.
 
-2. Activate the virtual environment:
+---
 
-   - **For macOS/Linux**:
-     ```sh
-     source env_name/bin/activate
-     ```
-   - **For Windows**:
-     ```sh
-     .\env_name\Scripts\activate
-     ```
+## Technical Details 🧠
 
-3. Install the required dependencies within the virtual environment:
-    
-    ```sh
-    pip install Pillow pycryptodome
-    ```
+### **Encryption Process**
+1. **Key Derivation**: Uses Scrypt with 1,048,576 iterations to derive a 256-bit key from the password.
+2. **Encryption**: Encrypts the image using AES-256-GCM with a 12-byte nonce.
+3. **Metadata Preservation**: Stores image metadata (width, height, mode, format) in the encrypted file header.
+4. **Authentication**: Includes an authentication tag to verify data integrity.
 
-## Dependencies
+### **File Format**
+Encrypted files have the following structure:
+- **Header**: Contains cryptographic parameters (salt, iterations, nonce) and image metadata.
+- **Metadata**: Stores image mode and format as UTF-8 encoded strings.
+- **Ciphertext**: Encrypted image data with authentication tag.
 
-The following libraries are required for this project:
+---
 
-1. `tkinter` - For building the graphical user interface (GUI).
-2. `Pillow` - To handle image operations, specifically converting an image into bytes.
-3. `pycryptodome` - Provides cryptographic functions including AES encryption.
+## Screenshots 📸
 
-You can install these dependencies using pip:
+### Main Interface
+![Main Interface](screenshots/main_interface.png)
 
-```sh
-pip install Pillow pycryptodome
-```
+### Encryption Success
+![Encryption Success](screenshots/encryption_success.png)
 
-## Usage
+### Decryption Success
+![Decryption Success](screenshots/decryption_success.png)
 
-The GUI prompts users for a password and allows them to select images for encryption/decryption.
+---
 
-### Encrypting an Image
+## Contributing 🤝
 
-1. Open the application.
-2. Enter your desired password in the "Password" field.
-3. Click on "Encrypt".
-4. Select the image file you want to encrypt from the file dialog box that appears.
-5. The encrypted file will be saved with a `.enc` extension.
+Contributions are welcome! Please follow these steps:
+1. Fork the repository.
+2. Create a new branch for your feature or bugfix.
+3. Submit a pull request with a detailed description of your changes.
 
-### Decrypting an Image
+---
 
-1. Open the application.
-2. Enter your desired password in the "Password" field.
-3. Click on "Decrypt".
-4. Select the encrypted image file (`.enc`) you want to decrypt from the file dialog box that appears.
-5. The decrypted image will be saved with a `.png` extension.
+## License 📜
 
-## Advanced Features
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
-- **Multiple File Encryption**: You can encrypt multiple images by repeating the encryption process for each file.
-- **Custom Password Strength**: Choose strong passwords by combining uppercase, lowercase, numbers, and special characters.
-- **Password Reset Functionality**: If you forget your password, use the built-in reset functionality to generate a new one.
+---
 
-## Contributing
+## Acknowledgments 🙏
 
-If you spot any bugs, have suggestions for improvements, or want to contribute additional features, please follow these steps:
+- **Pillow**: For image processing capabilities.
+- **cryptography**: For providing secure cryptographic primitives.
+- **Tkinter**: For the cross-platform GUI framework.
 
-1. **Fork** the repository on GitHub.
-2. **Clone** your fork locally:
-    ```sh
-    git clone https://github.com/tanm-sys/SecureImageTool.git
-    ```
-3. **Create a branch** for your feature or bug fix:
-    ```sh
-    cd SecureImageTool
-    git checkout -b name-of-your-bugfix-or-feature
-    ```
-4. **Commit** your changes and push to the remote repository.
-5. **Submit a pull request**.
+---
 
-Ensure that your code adheres to PEP 8 style guidelines, and include appropriate documentation and tests if applicable.
+## Support 💬
 
-## License
+For questions, issues, or feature requests, please open an issue on the [GitHub repository](https://github.com/tanm-sys/SecureImageTool/issues).
 
-This project is licensed under the MIT License - see the `LICENSE` file for details.
+---
+
+**SecureImageTool** is designed to provide robust security for your sensitive images while maintaining ease of use. Protect your digital assets with confidence! 🔒
 
 ---
